@@ -1,10 +1,17 @@
 import os
+
 import pygame
 
-from board import SCL, SDA
-import busio
-from adafruit_motor import servo
-from adafruit_pca9685 import PCA9685
+TYPE_A = 0
+TYPE_B = 6
+TYPE_C = 12
+ON_DEVELOP_MACHINE = True
+
+if not ON_DEVELOP_MACHINE:
+    import busio
+    from adafruit_motor import servo
+    from adafruit_pca9685 import PCA9685
+    from board import SCL, SDA
 
 # RaspberryPi上で動かす場合、必要になる
 os.environ["SDL_VIDEODRIVER"] = "dummy"
@@ -12,42 +19,48 @@ pygame.init()
 joystick = pygame.joystick.Joystick(0)
 joystick.init()
 
-# PCA9685
-i2c = busio.I2C(SCL, SDA)
-pca1 = PCA9685(i2c, address=0x40)
-pca1.frequency = 50
-pca2 = PCA9685(i2c, address=0x41)
-pca2.frequency = 50
-
-TYPE_A = 0
-TYPE_B = 6
-TYPE_C = 12
-
+i2c = None
+pca1 = None
+pca2 = None
 servos = []
 
-# 線形補間をするための関数を返す
-def make_interpolater(left_min, left_max, right_min, right_max): 
-    left_span = left_max - left_min  
-    right_span = right_max - right_min  
-    scale_factor = float(right_span) / float(left_span) 
-    def tmp(value):
-        return right_min + (value-left_min) * scale_factor
-    return tmp
 
-if __name__ == '__main__':
-
+def init_servo():
+    i2c = busio.I2C(SCL, SDA)
+    pca1 = PCA9685(i2c, address=0x40)
+    pca1.frequency = 50
+    pca2 = PCA9685(i2c, address=0x41)
+    pca2.frequency = 50
     for i in range(6):
         tmp = servo.Servo(pca1.channels[i],
-                min_pulse=500, max_pulse=2500, actuation_range=270)
+                          min_pulse=500, max_pulse=2500, actuation_range=270)
         servos.append(tmp)
     for i in range(6):
-        tmp = servo.Servo(pca1.channels[6+i],
-                min_pulse=500, max_pulse=2500, actuation_range=180)
+        tmp = servo.Servo(pca1.channels[6 + i],
+                          min_pulse=500, max_pulse=2500, actuation_range=180)
         servos.append(tmp)
     for i in range(6):
         tmp = servo.Servo(pca2.channels[i],
-                min_pulse=500, max_pulse=2500, actuation_range=180)
+                          min_pulse=500, max_pulse=2500, actuation_range=180)
         servos.append(tmp)
+
+# 線形補間をするための関数を返す
+
+
+def make_interpolater(left_min, left_max, right_min, right_max):
+    left_span = left_max - left_min
+    right_span = right_max - right_min
+    scale_factor = float(right_span) / float(left_span)
+
+    def tmp(value):
+        return right_min + (value - left_min) * scale_factor
+    return tmp
+
+
+if __name__ == '__main__':
+
+    if not ON_DEVELOP_MACHINE:
+        init_servo()
 
     # 操作する関節番号
     target1 = 0
@@ -76,27 +89,24 @@ if __name__ == '__main__':
                 "btn_joyl": joystick.get_button(9),
                 "btn_joyr": joystick.get_button(10)
             }
-            #print(gamepad_data)
+            print(gamepad_data)
 
             value = gamepad_data['joy_lx']
             if target2 == 0:
                 # 150度の±90度で動かす
-                f = make_interpolater(-1.0,+1.0, 150-90, 150+90)
-                angle = f(value)
-                servos[TYPE_A + target1].angle = angle
-                print("TYPE_A=", angle)
+                if not ON_DEVELOP_MACHINE:
+                    servos[TYPE_A + \
+                        target1].angle = make_interpolater(-1.0, +1.0, 150 - 90, 150 + 90)(value)
             if target2 == 1:
                 # 140度の±30度で動かす
-                f = make_interpolater(-1.0,+1.0, 140-30, 140+30)
-                angle = f(value)
-                servos[TYPE_B + target1].angle = angle
-                print("TYPE_B=", angle)
+                if not ON_DEVELOP_MACHINE:
+                    servos[TYPE_B + \
+                        target1].angle = make_interpolater(-1.0, +1.0, 140 - 30, 140 + 30)(value)
             if target2 == 2:
                 # 90度の±60度で動かす
-                f = make_interpolater(-1.0,+1.0, 90-60, 90+60)
-                angle = f(value)
-                servos[TYPE_C + target1].angle = angle
-                print("TYPE_C=", angle)
+                if not ON_DEVELOP_MACHINE:
+                    servos[TYPE_C + \
+                        target1].angle = make_interpolater(-1.0, +1.0, 90 - 60, 90 + 60)(value)
 
             if gamepad_data['btn_x']:
                 target1 += 1

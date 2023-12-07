@@ -1,25 +1,25 @@
 # coding: utf-8
-import time
-import sys
-import numpy as np
-import math
 import enum
+import math
+import sys
+import time
 
-# 開発マシンならTrue (RaspberryPi実機上ならFalse)
-ON_DEVELOP_MACHINE = True
-
+import numpy as np
+from PyQt5 import QtWidgets
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
+from PyQt5.QtGui import QColor, QFont, QPainter, QPen
 from PyQt5.QtWidgets import *
-from PyQt5 import QtWidgets
-from PyQt5.QtGui import QPainter, QColor, QFont, QPen
+
+ON_DEVELOP_MACHINE = True  # 開発マシンならTrue (RaspberryPi実機上ならFalse)
 
 # I2C、PWMサーボモータードライバーの初期化 (実機のみ)
 if not ON_DEVELOP_MACHINE:
-    from board import SCL, SDA
     import busio
     from adafruit_motor import servo
     from adafruit_pca9685 import PCA9685
+    from board import SCL, SDA
+
 
 class JointGroupId(enum.IntEnum):
     A = 0
@@ -29,6 +29,7 @@ class JointGroupId(enum.IntEnum):
     E = 4
     F = 5
 
+
 class JointType(enum.IntEnum):
     J1 = 0
     J2 = 1
@@ -36,13 +37,17 @@ class JointType(enum.IntEnum):
     J4 = 3
 
 # よく使う計算ロジック（回転行列の計算）
+
+
 class CalcUtil():
     @classmethod
     def rotation(cls, u, t):
-        r = np.array([[np.cos(t), -np.sin(t)], [np.sin(t),  np.cos(t)]])
-        return  np.dot(r, u)
+        r = np.array([[np.cos(t), -np.sin(t)], [np.sin(t), np.cos(t)]])
+        return np.dot(r, u)
 
 # サーボモーター制御クラス
+
+
 class ServoMortors():
     def __init__(self):
         # シミュレーション上の論理的なサーボモーター角度と現実角度のOFFSET調整
@@ -73,16 +78,22 @@ class ServoMortors():
         # 注) パルス幅、ActuationRangeはサーボモーターの種類によって要変更
         self.servos = []
         for i in range(6):
-            tmp = servo.Servo(self.pca1.channels[i],
-                    min_pulse=500, max_pulse=2500, actuation_range=270)
+            tmp = servo.Servo(
+                self.pca1.channels[i],
+                min_pulse=500,
+                max_pulse=2500,
+                actuation_range=270)
             self.servos.append(tmp)
         for i in range(6):
-            tmp = servo.Servo(self.pca1.channels[6+i],
-                    min_pulse=500, max_pulse=2500, actuation_range=180)
+            tmp = servo.Servo(self.pca1.channels[6 + i],
+                              min_pulse=500, max_pulse=2500, actuation_range=180)
             self.servos.append(tmp)
         for i in range(6):
-            tmp = servo.Servo(self.pca2.channels[i],
-                    min_pulse=500, max_pulse=2500, actuation_range=180)
+            tmp = servo.Servo(
+                self.pca2.channels[i],
+                min_pulse=500,
+                max_pulse=2500,
+                actuation_range=180)
             self.servos.append(tmp)
 
     def _get_servo(self, joint_id, group_id):
@@ -105,13 +116,19 @@ class ServoMortors():
         # シミュレーション上の角度と、実際にサーボドライバーに指示する角度の変換
         for i in range(6):
             if (i < 3):
-                servo_theta1[i] = math.radians(self.servo_theta1_offset) + theta1[i]
-                servo_theta2[i] = math.radians(self.servo_theta2_offset) + theta2[i]
-                servo_theta3[i] = math.radians(self.servo_theta3_offset) - theta3[i]
+                servo_theta1[i] = math.radians(
+                    self.servo_theta1_offset) + theta1[i]
+                servo_theta2[i] = math.radians(
+                    self.servo_theta2_offset) + theta2[i]
+                servo_theta3[i] = math.radians(
+                    self.servo_theta3_offset) - theta3[i]
             else:
-                servo_theta1[i] = math.radians(self.servo_theta1_offset) - (2.0 * math.pi - theta1[i])
-                servo_theta2[i] = math.radians(self.servo_theta2_offset) + theta2[i]
-                servo_theta3[i] = math.radians(self.servo_theta3_offset) - theta3[i]
+                servo_theta1[i] = math.radians(
+                    self.servo_theta1_offset) - (2.0 * math.pi - theta1[i])
+                servo_theta2[i] = math.radians(
+                    self.servo_theta2_offset) + theta2[i]
+                servo_theta3[i] = math.radians(
+                    self.servo_theta3_offset) - theta3[i]
 
         if ON_DEVELOP_MACHINE:
             return
@@ -120,19 +137,19 @@ class ServoMortors():
         for i in range(6):
             servo = self._get_servo(JointType.J1, i)
             t = math.degrees(servo_theta1[i])
-            if t >=0 and t<=180:
+            if t >= 0 and t <= 180:
                 servo.angle = t
             else:
                 print(f'(ERROR) J1[{i}]={t}')
             servo = self._get_servo(JointType.J2, i)
             t = math.degrees(servo_theta2[i])
-            if t >=0 and t<=180:
+            if t >= 0 and t <= 180:
                 servo.angle = t
             else:
                 print(f'(ERROR) J2[{i}]={t}')
             servo = self._get_servo(JointType.J3, i)
             t = math.degrees(servo_theta3[i])
-            if t >=0 and t<=270:
+            if t >= 0 and t <= 270:
                 servo.angle = t
             else:
                 print(f'(ERROR) J3[{i}]={t}')
@@ -169,6 +186,7 @@ class ServoMortors():
             servo.angle = 150 + 40
             time.sleep(0.1)
 
+
 class Hexapod():
     def __init__(self):
         self.init_position()
@@ -184,9 +202,11 @@ class Hexapod():
         self.theta2 = [math.radians(0) for i in range(6)]
         self.theta3 = [math.radians(0) for i in range(6)]
         # X-Y座標面 (TOP VIEWからの座標面)
-        self.leg_coords_topview = [[(0, 0) for j in range(6)] for i in range(4)]
+        self.leg_coords_topview = [[(0, 0) for j in range(6)]
+                                   for i in range(4)]
         # X-Z'座標面 (各リンク機構をSIDE VIEWしたもの)
-        self.leg_coords_sideview = [[(0, 0) for j in range(6)] for i in range(4)]
+        self.leg_coords_sideview = [
+            [(0, 0) for j in range(6)] for i in range(4)]
         # 順方向計算に使うパラメータ
         self.real_coords = [(0.15, -0.08) for i in range(6)]
         self.distance = [0.15 for i in range(6)]
@@ -202,7 +222,7 @@ class Hexapod():
     # 逆方向計算
     # 与えられた座標に持っていくために必要な関節角度(Theta2, Theta3)の計算
     # ※Theta1は別の場所で計算
-    def calc_backward(self, group_id, apply = True):
+    def calc_backward(self, group_id, apply=True):
         distance = self.distance[group_id]
         height = self.height[group_id]
         (real_x, real_y) = self.real_coords[group_id]
@@ -212,14 +232,14 @@ class Hexapod():
         l2 = self.long2[group_id]
         l3 = self.long3[group_id]
         real_x = real_x - self.long1[group_id]
-        L = math.sqrt( real_x * real_x + real_y * real_y )
+        L = math.sqrt(real_x * real_x + real_y * real_y)
         J3, B, A, J2 = None, None, None, None
         ret = None
         try:
             J3 = math.acos((l2 * l2 + l3 * l3 - L * L) / (2 * l2 * l3))
             B = math.acos((L * L + l2 * l2 - l3 * l3) / (2 * L * l2))
             A = math.fabs(math.atan(real_y / real_x))
-            #A = math.atan2(real_y, real_x) 
+            # A = math.atan2(real_y, real_x)
             J2 = B - A
             theta2 = J2
             theta3 = -(math.pi - J3)
@@ -255,13 +275,14 @@ class Hexapod():
             self.leg_coords_topview[JointType.J2][i] = (x, y)
 
             l2_top = CalcUtil.rotation((l2, 0), self.theta2[i])
-            Ru2 = CalcUtil.rotation((l2_top[0]  ,0), step * i - self.theta1[i])
+            Ru2 = CalcUtil.rotation((l2_top[0], 0), step * i - self.theta1[i])
             x = r * math.cos(step * i) + Ru1[0] + Ru2[0]
             y = r * math.sin(step * i) + Ru1[1] + Ru2[1]
             self.leg_coords_topview[JointType.J3][i] = (x, y)
 
-            l3_top = CalcUtil.rotation((l3, 0), self.theta2[i] + self.theta3[i])
-            Ru3 = CalcUtil.rotation((l3_top[0]  ,0), step * i - self.theta1[i])
+            l3_top = CalcUtil.rotation(
+                (l3, 0), self.theta2[i] + self.theta3[i])
+            Ru3 = CalcUtil.rotation((l3_top[0], 0), step * i - self.theta1[i])
             x = r * math.cos(step * i) + Ru1[0] + Ru2[0] + Ru3[0]
             y = r * math.sin(step * i) + Ru1[1] + Ru2[1] + Ru3[1]
             self.leg_coords_topview[JointType.J4][i] = (x, y)
@@ -281,14 +302,15 @@ class Hexapod():
             self.leg_coords_sideview[JointType.J3][i] = (x, y)
 
             Ru1 = CalcUtil.rotation((self.long2[i], 0), self.theta2[i])
-            Ru2 = CalcUtil.rotation((self.long3[i], 0), self.theta2[i] + self.theta3[i])
+            Ru2 = CalcUtil.rotation(
+                (self.long3[i], 0), self.theta2[i] + self.theta3[i])
             x = self.long1[i] + Ru1[0] + Ru2[0]
             y = - (Ru1[1] + Ru2[1])
             self.leg_coords_sideview[JointType.J4][i] = (x, y)
 
 
 class MainWidget(QtWidgets.QWidget):
-    def __init__(self,  parent=None):
+    def __init__(self, parent=None):
         super(MainWidget, self).__init__()
         self.cnt = 0
         self.left_clicked_pos = None
@@ -309,7 +331,7 @@ class MainWidget(QtWidgets.QWidget):
         # 自動描画 (100msec秒毎に描画する)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.timer_func)
-        self.timer.start(100) 
+        self.timer.start(100)
 
     def timer_func(self):
         self.cnt += 1
@@ -335,11 +357,11 @@ class MainWidget(QtWidgets.QWidget):
         self.repaint()
 
     def paintEvent(self, event):
-        #self.hexapod.calc_forward() 
+        # self.hexapod.calc_forward()
 
         qp = QPainter()
         qp.begin(self)
-        #qp.setRenderHint(QPainter.Antialiasing)
+        # qp.setRenderHint(QPainter.Antialiasing)
 
         JOINT_RADIUS_PX = 10
         TOP_VIEW_PANELS_X = 300
@@ -405,31 +427,40 @@ class MainWidget(QtWidgets.QWidget):
         distance_a = 0.1
         # SIDE_VIEWから見た時の関節と地面までの距離
         distance_b = -0.08
-        #よく使い回す値
+        # よく使い回す値
         tmp1 = 2.0 * math.pi / 6.0
         tmp2 = 2.0 * math.pi / num_divide
         # 各関節の位置計算
         for target_joint in range(6):
             # 位相角の計算
-            phase_diff1 = math.pi / 2 if (target_joint%2 != 0) else 0
-            phase_diff2 = math.pi if (target_joint%2 != 0) else 0
+            phase_diff1 = math.pi / 2 if (target_joint % 2 != 0) else 0
+            phase_diff2 = math.pi if (target_joint % 2 != 0) else 0
             # J1からdistance_a[m]離れた位置を計算する (TOP_VIEWでみた足を着地すべき場所)
-            (x1, y1) = self.hexapod.leg_coords_topview[JointType.J1][target_joint]
-            x = distance_a * math.cos(tmp1 * target_joint )
-            y = distance_a * math.sin(tmp1 * target_joint )
-            y -= stroke_step_length_a * math.fabs(math.sin( tmp2 * self.cnt + phase_diff1))
+            (x1,
+             y1) = self.hexapod.leg_coords_topview[JointType.J1][target_joint]
+            x = distance_a * math.cos(tmp1 * target_joint)
+            y = distance_a * math.sin(tmp1 * target_joint)
+            y -= stroke_step_length_a * \
+                math.fabs(math.sin(tmp2 * self.cnt + phase_diff1))
             # 角度、距離などを変更
-            self.hexapod.theta1[target_joint] = math.atan2(-y, x) + (2.0*math.pi/6.0) * target_joint
-            self.hexapod.distance[target_joint] = math.sqrt(x*x + y*y)
-            self.hexapod.height[target_joint] = distance_b + math.fabs( relu(stroke_step_length_b * math.sin(tmp2 * 2 * self.cnt + phase_diff2)) )
+            self.hexapod.theta1[target_joint] = math.atan2(
+                -y, x) + (2.0 * math.pi / 6.0) * target_joint
+            self.hexapod.distance[target_joint] = math.sqrt(x * x + y * y)
+            self.hexapod.height[target_joint] = distance_b + math.fabs(
+                relu(stroke_step_length_b * math.sin(tmp2 * 2 * self.cnt + phase_diff2)))
             # TOP VIEWにおける可動範囲の描画
-            tmp_x = x1 + distance_a * math.cos(tmp1 * target_joint )
-            tmp_y = y1 + distance_a * math.sin(tmp1 * target_joint )
+            tmp_x = x1 + distance_a * math.cos(tmp1 * target_joint)
+            tmp_y = y1 + distance_a * math.sin(tmp1 * target_joint)
             qp.setPen(QPen(Qt.red, 3, Qt.SolidLine))
             qp.drawLine(
-                round((tmp_x) * self.scale + TOP_VIEW_PANELS_X), round((tmp_y-stroke_step_length_a) * self.scale + TOP_VIEW_PANELS_Y),
-                round((tmp_x) * self.scale + TOP_VIEW_PANELS_X), round((tmp_y+stroke_step_length_a) * self.scale + TOP_VIEW_PANELS_Y)
-            )
+                round(
+                    (tmp_x) * self.scale + TOP_VIEW_PANELS_X),
+                round(
+                    (tmp_y - stroke_step_length_a) * self.scale + TOP_VIEW_PANELS_Y),
+                round(
+                    (tmp_x) * self.scale + TOP_VIEW_PANELS_X),
+                round(
+                    (tmp_y + stroke_step_length_a) * self.scale + TOP_VIEW_PANELS_Y))
 
         # 各関節角度の計算 (逆方向計算)
         for i in range(6):
@@ -450,8 +481,8 @@ class MainWidget(QtWidgets.QWidget):
         for j in range(4):
             point_r = 10
             for i, (x, y) in enumerate(self.hexapod.leg_coords_topview[j]):
-                tmp_x = round(x * self.scale - point_r/2)
-                tmp_y = round(y * self.scale - point_r/2)
+                tmp_x = round(x * self.scale - point_r / 2)
+                tmp_y = round(y * self.scale - point_r / 2)
                 qp.setBrush(QColor(0, 0, 255))
                 qp.setPen(Qt.NoPen)
                 qp.drawEllipse(tmp_x, tmp_y, point_r, point_r)
@@ -467,7 +498,8 @@ class MainWidget(QtWidgets.QWidget):
         # Draw Hexagon
         for i in range(6):
             (x1, y1) = self.hexapod.leg_coords_topview[JointType.J1][i]
-            (x2, y2) = self.hexapod.leg_coords_topview[JointType.J1][(i+1)%6]
+            (x2, y2) = self.hexapod.leg_coords_topview[JointType.J1][(
+                i + 1) % 6]
             x1 = round(x1 * self.scale)
             y1 = round(y1 * self.scale)
             x2 = round(x2 * self.scale)
@@ -481,15 +513,31 @@ class MainWidget(QtWidgets.QWidget):
             (x1, y1) = self.hexapod.leg_coords_topview[JointType.J1][i]
             x1 = round(x1 * self.scale)
             y1 = round(y1 * self.scale)
-            x2 = round(x1 + distance * math.cos( (2.0*math.pi/6.0) * i ) * self.scale)
-            y2 = round(y1 + distance * math.sin( (2.0*math.pi/6.0) * i ) * self.scale)
+            x2 = round(
+                x1 +
+                distance *
+                math.cos(
+                    (2.0 *
+                     math.pi /
+                     6.0) *
+                    i) *
+                self.scale)
+            y2 = round(
+                y1 +
+                distance *
+                math.sin(
+                    (2.0 *
+                     math.pi /
+                     6.0) *
+                    i) *
+                self.scale)
             qp.setPen(QColor(Qt.red))
             qp.drawLine(x1, y1, x2, y2)
         # Draw link between each joints
         for j in range(3):
             for i in range(6):
                 (x1, y1) = self.hexapod.leg_coords_topview[j][i]
-                (x2, y2) = self.hexapod.leg_coords_topview[j+1][i]
+                (x2, y2) = self.hexapod.leg_coords_topview[j + 1][i]
                 x1 = round(x1 * self.scale)
                 y1 = round(y1 * self.scale)
                 x2 = round(x2 * self.scale)
@@ -509,17 +557,17 @@ class MainWidget(QtWidgets.QWidget):
             qp.drawLine(base_x, 0, base_x, 300)
             # X-AXIS
             qp.setPen(QColor(Qt.blue))
-            qp.drawLine(base_x, base_y, base_x+150, base_y)
+            qp.drawLine(base_x, base_y, base_x + 150, base_y)
             # Ground
             tmps = [round(0.08 * self.scale)]
             qp.setPen(QColor(Qt.red))
             for tmp in tmps:
-                qp.drawLine(base_x, base_y + tmp, base_x+150, base_y + tmp)
+                qp.drawLine(base_x, base_y + tmp, base_x + 150, base_y + tmp)
             # Show Joints
             for j in range(4):
                 (x, y) = self.hexapod.leg_coords_sideview[j][i]
-                tmp_x = round(base_x + x * self.scale - JOINT_RADIUS_PX /2)
-                tmp_y = round(base_y + y * self.scale - JOINT_RADIUS_PX /2)
+                tmp_x = round(base_x + x * self.scale - JOINT_RADIUS_PX / 2)
+                tmp_y = round(base_y + y * self.scale - JOINT_RADIUS_PX / 2)
                 qp.setBrush(QColor(0, 0, 255))
                 qp.setPen(Qt.NoPen)
                 qp.drawEllipse(tmp_x, tmp_y, JOINT_RADIUS_PX, JOINT_RADIUS_PX)
@@ -531,13 +579,28 @@ class MainWidget(QtWidgets.QWidget):
             # Show Lines between each joints
             for j in range(3):
                 (x1, y1) = self.hexapod.leg_coords_sideview[j][i]
-                (x2, y2) = self.hexapod.leg_coords_sideview[j+1][i]
+                (x2, y2) = self.hexapod.leg_coords_sideview[j + 1][i]
                 qp.setBrush(Qt.black)
                 qp.setPen(QColor(Qt.blue))
-                qp.drawLine(round(base_x + x1 * self.scale), round(base_y + y1 * self.scale) ,
-                            round(base_x + x2 * self.scale) , round(base_y + y2 * self.scale))
+                qp.drawLine(
+                    round(
+                        base_x +
+                        x1 *
+                        self.scale),
+                    round(
+                        base_y +
+                        y1 *
+                        self.scale),
+                    round(
+                        base_x +
+                        x2 *
+                        self.scale),
+                    round(
+                        base_y +
+                        y2 *
+                        self.scale))
             # Show values
-            qp.setPen(QColor(Qt.red))   
+            qp.setPen(QColor(Qt.red))
             qp.setFont(QFont('Arial', 10))
             base_y = 300
             for i, text in enumerate(
@@ -549,17 +612,18 @@ class MainWidget(QtWidgets.QWidget):
                     f'Theta1={math.degrees(self.hexapod.theta1[i]):.2f}',
                     f'Theta2={math.degrees(self.hexapod.theta2[i]):.2f}',
                     f'Theta3={math.degrees(self.hexapod.theta3[i]):.2f}',
-                    ]
-                ):
-                qp.drawText(base_x + 10, base_y + i*15+10, text)
+                ]
+            ):
+                qp.drawText(base_x + 10, base_y + i * 15 + 10, text)
         qp.restore()
         qp.end()
+
 
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setGeometry(300, 300, 1920, 700)
-        self.setWindowTitle('Hexapod制御用')    
+        self.setWindowTitle('Hexapod制御用')
         self.show()
         # Widget
         self.main_widget = MainWidget(parent=self)
@@ -577,7 +641,8 @@ class MainWindow(QtWidgets.QMainWindow):
         edit_menu.addAction(undo_action)
         edit_menu.addAction(redo_action)
         close_action.triggered.connect(self.close)
- 
+
+
 if __name__ == '__main__':
     app = QtWidgets.QApplication(sys.argv)
     mw = MainWindow()
