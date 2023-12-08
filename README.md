@@ -3,6 +3,9 @@
 ![Hexapod Image](images/20231203225401.png)
 
 本リポジトリは6脚ロボットの3Dモデルと制御用ソフトウェアの一部を格納したものになります。
+詳細は下記の記事を御覧ください。
+
+- [https://tech-blog.abeja.asia/entry/advent-2023-day08](https://tech-blog.abeja.asia/entry/advent-2023-day08)
 
 # ディレクトリ・ファイル説明
 
