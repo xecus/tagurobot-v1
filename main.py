@@ -1,8 +1,10 @@
 # coding: utf-8
 import enum
 import math
+import os
 import sys
 import time
+from distutils.util import strtobool
 
 import numpy as np
 from PyQt5 import QtWidgets
@@ -11,11 +13,11 @@ from PyQt5.QtGui import *
 from PyQt5.QtGui import QColor, QFont, QPainter, QPen
 from PyQt5.QtWidgets import *
 
-RUN_ON_RASPBERRYPI = False  # 開発マシンならTrue (RaspberryPi実機上ならFalse)
-USE_GAMEPAD = True  # Gamepadが接続されている
+ENABLE_SERVO = strtobool(os.getenv("ENABLE_SERVO", "false"))
+USE_GAMEPAD = strtobool(os.getenv("USE_GAMEPAD", "false"))
 
 # I2C、PWMサーボモータードライバーの初期化 (実機のみ)
-if RUN_ON_RASPBERRYPI:
+if ENABLE_SERVO:
     import busio
     from adafruit_motor import servo
     from adafruit_pca9685 import PCA9685
@@ -75,6 +77,8 @@ class ServoMortors():
         self.servos = []
         self.pca1 = None
         self.pca2 = None
+
+        self.stand = False
 
     def deinit_servo_driver(self):
         self.pca1.deinit()
@@ -147,7 +151,7 @@ class ServoMortors():
                     self.servo_theta3_offset) - theta3[i]
 
         # RaspberryPi以外（開発機）ではサーボモーター制御を行わない
-        if not RUN_ON_RASPBERRYPI:
+        if not ENABLE_SERVO:
             return
 
         # サーボモータードライバーへの角度指示 (実際に動かす)
@@ -173,6 +177,9 @@ class ServoMortors():
 
     # 休眠姿勢
     def rest_position(self):
+        if not ENABLE_SERVO:
+            return
+        print("rest_position")
         for i in range(6):
             servo = self._get_servo(JointType.J3, i)
             servo.angle = 150
@@ -185,9 +192,15 @@ class ServoMortors():
             servo = self._get_servo(JointType.J1, i)
             servo.angle = 90
             time.sleep(0.1)
+        self.stand = False
 
     # 立ち上がる
     def standing_position(self):
+        if not ENABLE_SERVO:
+            return
+        if self.stand:
+            return
+        print("standing_position")
         start = 140
         stop = 90
         step = -10
@@ -202,6 +215,7 @@ class ServoMortors():
             servo = self._get_servo(JointType.J3, i)
             servo.angle = 150 + 40
             time.sleep(0.1)
+        self.stand = True
 
 
 class Gamepad():
@@ -248,6 +262,7 @@ class Gamepad():
 
 class Hexapod():
     def __init__(self):
+
         self.init_position()
 
     def init_position(self):
@@ -406,19 +421,19 @@ class MainWidget(QtWidgets.QWidget):
         self.right_clicked_pos = None
         self.previous_right_clicked_pos = None
 
-        self.joy_lx_theta_buffer = Buffer(50)
-        self.joy_lx_mag_buffer = Buffer(50)
-        self.joy_lx_theta = -90.0  # 初期の進行方向
+        self.joy_leftstick_theta_buffer = Buffer(50)
+        self.joy_leftstick_mag_buffer = Buffer(50)
+        self.joy_rightstick_mag_buffer = Buffer(50)
 
+        self.joy_lx_theta = 90.0  # 初期の進行方向
         self.time_delta = 100
+
+        self.operation_mode = 0
 
         # 実機の場合はモータードライバーを初期化する
         self.servo_mortors = ServoMortors()
-        if RUN_ON_RASPBERRYPI:
+        if ENABLE_SERVO:
             self.servo_mortors.init_servo_driver()
-            self.servo_mortors.rest_position()
-            self.servo_mortors.standing_position()
-            time.sleep(3)
 
         # Gamepad初期化
         self.gamepad = Gamepad()
@@ -456,21 +471,19 @@ class MainWidget(QtWidgets.QWidget):
         self.repaint()
 
     def paintEvent(self, event):
-        # self.hexapod.calc_forward()
-
         # QPainterの中で実行するとエラーになるのでここで実行
         if USE_GAMEPAD:
             try:
                 self.gamepad.get_latest_data()
             except Exception as e:
                 print(e)
-            magnitude = self.joy_lx_mag_buffer.get_latest()
+            magnitude = self.joy_rightstick_mag_buffer.get_latest()
             if magnitude is not None:
-                self.cnt += CalcUtil.make_interpolater(0,
-                                                       100, 0, 10)(magnitude)
+                self.cnt += round(CalcUtil.make_interpolater(0,
+                                  100, 0, 50)(magnitude))
         else:
             # Gamepadを使わない時は機械的にカウンターを進める
-            self.cnt += 10
+            self.cnt += 50
 
         qp = QPainter()
         qp.begin(self)
@@ -486,7 +499,7 @@ class MainWidget(QtWidgets.QWidget):
 
         qp.setPen(QColor(Qt.red))
         qp.setFont(QFont('Arial', 20))
-        qp.drawText(10, 50, f'cnt={self.cnt}')
+        qp.drawText(10, 50, f'cnt={self.cnt} op={self.operation_mode}')
 
         """
         # 左クリックで手動で関節を動かす (SIDE_VIEW_PANEL)
@@ -533,24 +546,27 @@ class MainWidget(QtWidgets.QWidget):
         # 1周期の分割数 (高ければ高いほど小刻みな運動)
         num_divide = 1000
         # 一歩の歩幅 (m)
-        stroke_step_length_a = 0.03
+        stroke_step_length_a = 0.05
         # 一歩の高さ
-        stroke_step_length_b = 0.01
+        stroke_step_length_b = 0.03
         # TOP_VIEWにおける関節と足の定位置までの距離
         distance_a = 0.1
         # SIDE_VIEWから見た時の関節と地面までの距離
-        distance_b = -0.08
+        distance_b = -0.12
         # よく使い回す値
         tmp_theta1 = 2.0 * math.pi / 6.0
         tmp_theta2 = 2.0 * math.pi / num_divide
 
-        latest_magnitude = self.joy_lx_mag_buffer.get_latest()
-        # theta = self.joy_lx_theta_buffer.get_latest()
-        magnitude = self.joy_lx_mag_buffer.get_moving_average(5)
-        theta = self.joy_lx_theta_buffer.get_moving_average(5)
+        latest_left_magnitude = self.joy_leftstick_mag_buffer.get_latest()
+        latest_right_magnitude = self.joy_rightstick_mag_buffer.get_latest()
 
-        if (latest_magnitude is not None) and (latest_magnitude > 10.0):
-            self.joy_lx_theta = theta
+        magnitude = self.joy_leftstick_mag_buffer.get_moving_average(5)
+        theta = self.joy_leftstick_theta_buffer.get_moving_average(5)
+        if (latest_left_magnitude is not None) and (
+                latest_left_magnitude > 10.0):
+            if (latest_right_magnitude is not None) and (
+                    latest_right_magnitude > 10.0):
+                self.joy_lx_theta = theta
 
         # 各関節の位置計算
         for target_joint in range(6):
@@ -565,7 +581,6 @@ class MainWidget(QtWidgets.QWidget):
             # スティックの角度の方向にStrokeを向ける
             tmp = stroke_step_length_a * \
                 math.fabs(math.sin(tmp_theta2 * self.cnt + phase_diff1))
-            # t= -90
             t = -self.joy_lx_theta
             (tmp_x1, tmp_y1) = CalcUtil.rotation((tmp, 0), math.radians(t))
             x += tmp_x1
@@ -584,7 +599,6 @@ class MainWidget(QtWidgets.QWidget):
             base_x = x1 + distance_a * math.cos(tmp_theta1 * target_joint)
             base_y = y1 + distance_a * math.sin(tmp_theta1 * target_joint)
 
-            # t= -90
             t = -self.joy_lx_theta
             (tmp_x1, tmp_y1) = CalcUtil.rotation(
                 (-stroke_step_length_a, 0), math.radians(t))
@@ -601,6 +615,22 @@ class MainWidget(QtWidgets.QWidget):
                 round(
                     (base_y + tmp_y2) * self.scale + TOP_VIEW_PANELS_Y))
 
+        if USE_GAMEPAD:
+            data = self.gamepad.get_last_received()
+            if data is not None:
+                btn_x = data['btn_x']
+                btn_y = data['btn_y']
+                btn_a = data['btn_a']
+                btn_b = data['btn_b']
+                if btn_x:
+                    self.operation_mode = 0
+                if btn_y:
+                    self.operation_mode = 1
+                if btn_a:
+                    self.operation_mode = 2
+                if btn_b:
+                    self.operation_mode = 3
+
         # 各関節角度の計算 (逆方向計算)
         for i in range(6):
             self.hexapod.calc_backward(i)
@@ -609,7 +639,12 @@ class MainWidget(QtWidgets.QWidget):
         # 内部角度情報のエクスポート
         angles = self.hexapod.export_angles()
         # 実際のサーボモーターの制御
-        self.servo_mortors.control(angles)
+        if self.operation_mode == 0:
+            self.servo_mortors.control(angles)
+        if self.operation_mode == 1:
+            self.servo_mortors.rest_position()
+        if self.operation_mode == 2:
+            self.servo_mortors.standing_position()
 
         # TOP Viewパネルの描画
         qp.save()
@@ -636,21 +671,32 @@ class MainWidget(QtWidgets.QWidget):
         # Show direction of L-AXIS
         if USE_GAMEPAD:
             data = self.gamepad.get_last_received()
-            joy_lx = data['joy_lx']
-            joy_ly = data['joy_ly']
-            x = CalcUtil.make_interpolater(-1.0, +1.0, -100, 100)(joy_lx)
-            y = CalcUtil.make_interpolater(-1.0, +1.0, -100, 100)(joy_ly)
-            # magnitude = math.sqrt(x*x+y*y) / math.sqrt(2.0)
-            magnitude = max(math.fabs(x), math.fabs(y))
-            theta = math.degrees(math.atan2(-y, x))
-            self.joy_lx_mag_buffer.add(magnitude)
-            self.joy_lx_theta_buffer.add(theta)
-            qp.setPen(QColor(Qt.red))
-            qp.drawLine(0, 0, round(x), round(y))
-            qp.setPen(QColor(Qt.red))
-            qp.setFont(QFont('Arial', 10))
-            qp.drawText(0, 20, f'x={x:.1f} y={y:.1f}')
-            qp.drawText(0, 40, f'magnitude={magnitude:.1f} theta={theta:.1f}')
+            if data is not None:
+                joy_lx = data['joy_lx']
+                joy_ly = data['joy_ly']
+                x = CalcUtil.make_interpolater(-1.0, +1.0, -100, 100)(joy_lx)
+                y = CalcUtil.make_interpolater(-1.0, +1.0, -100, 100)(joy_ly)
+                magnitude = max(math.fabs(x), math.fabs(y))
+                theta = math.degrees(math.atan2(-y, x))
+                self.joy_leftstick_mag_buffer.add(magnitude)
+                self.joy_leftstick_theta_buffer.add(theta)
+
+                joy_rx = data['joy_rx']
+                joy_ry = data['joy_ry']
+                # x = CalcUtil.make_interpolater(-1.0, +1.0, -100, 100)(joy_lx)
+                magnitude = CalcUtil.make_interpolater(
+                    -1.0, +1.0, +100, -100)(joy_ry)
+                if magnitude < 0:
+                    magnitude = 0
+                self.joy_rightstick_mag_buffer.add(magnitude)
+
+                qp.setPen(QColor(Qt.red))
+                qp.drawLine(0, 0, round(x), round(y))
+                qp.setPen(QColor(Qt.red))
+                qp.setFont(QFont('Arial', 10))
+                qp.drawText(0, 20, f'x={x:.1f} y={y:.1f}')
+                qp.drawText(
+                    0, 40, f'magnitude={magnitude:.1f} theta={theta:.1f}')
 
         # Draw Hexagon
         for i in range(6):
