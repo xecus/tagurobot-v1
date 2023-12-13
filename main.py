@@ -13,8 +13,8 @@ from PyQt5.QtGui import *
 from PyQt5.QtGui import QColor, QFont, QPainter, QPen
 from PyQt5.QtWidgets import *
 
-ENABLE_SERVO = strtobool(os.getenv("ENABLE_SERVO", "false"))
-USE_GAMEPAD = strtobool(os.getenv("USE_GAMEPAD", "false"))
+ENABLE_SERVO = strtobool(os.getenv("ENABLE_SERVO", "false")) == 1
+USE_GAMEPAD = strtobool(os.getenv("USE_GAMEPAD", "false")) == 1
 
 # I2C、PWMサーボモータードライバーの初期化 (実機のみ)
 if ENABLE_SERVO:
@@ -64,7 +64,6 @@ class CalcUtil():
         return tmp
 
 # サーボモーター制御クラス
-
 
 class ServoMortors():
     def __init__(self):
@@ -438,6 +437,7 @@ class MainWidget(QtWidgets.QWidget):
         # Gamepad初期化
         self.gamepad = Gamepad()
         if USE_GAMEPAD:
+            print(f"{USE_GAMEPAD} {type(USE_GAMEPAD)}")
             self.gamepad.init_gamepad()
 
         self.hexapod = Hexapod()
@@ -477,7 +477,7 @@ class MainWidget(QtWidgets.QWidget):
                 self.gamepad.get_latest_data()
             except Exception as e:
                 print(e)
-            magnitude = self.joy_rightstick_mag_buffer.get_latest()
+            magnitude = self.joy_leftstick_mag_buffer.get_latest()
             if magnitude is not None:
                 self.cnt += round(CalcUtil.make_interpolater(0,
                                   100, 0, 50)(magnitude))
@@ -559,14 +559,11 @@ class MainWidget(QtWidgets.QWidget):
 
         latest_left_magnitude = self.joy_leftstick_mag_buffer.get_latest()
         latest_right_magnitude = self.joy_rightstick_mag_buffer.get_latest()
-
         magnitude = self.joy_leftstick_mag_buffer.get_moving_average(5)
         theta = self.joy_leftstick_theta_buffer.get_moving_average(5)
         if (latest_left_magnitude is not None) and (
                 latest_left_magnitude > 10.0):
-            if (latest_right_magnitude is not None) and (
-                    latest_right_magnitude > 10.0):
-                self.joy_lx_theta = theta
+            self.joy_lx_theta = theta
 
         # 各関節の位置計算
         for target_joint in range(6):
